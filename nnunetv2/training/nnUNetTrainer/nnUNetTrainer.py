@@ -69,6 +69,17 @@ from nnunetv2.utilities.label_handling.label_handling import convert_labelmap_to
 from nnunetv2.utilities.plans_handling.plans_handler import PlansManager
 
 
+
+def calculate_loss_weights(epoch, beta=100, gamma=500):
+    if epoch < beta:
+        return 1.0, 0.0
+    elif beta <= epoch < gamma:
+        alpha = 1 - (epoch - beta) / (gamma - beta)
+        return alpha, 1 - alpha
+    else:
+        return 0.0, 1.0
+
+
 class nnUNetTrainer(object):
     def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict, unpack_dataset: bool = True,
                  device: torch.device = torch.device('cuda')):
@@ -968,10 +979,19 @@ class nnUNetTrainer(object):
     def on_train_epoch_start(self):
         self.network.train()
         self.lr_scheduler.step(self.current_epoch)
+        
+        w_ce, w_dice = calculate_loss_weights(self.current_epoch)
+        self.loss.weight_ce = w_ce
+        self.loss.weight_dice = w_dice
+
         self.print_to_log_file('')
         self.print_to_log_file(f'Epoch {self.current_epoch}')
         self.print_to_log_file(
             f"Current learning rate: {np.round(self.optimizer.param_groups[0]['lr'], decimals=5)}")
+        self.print_to_log_file(
+            f"Current weight_ce: {np.round(self.loss.weight_ce, decimals=5)}")
+        self.print_to_log_file(
+            f"Current weight_dice: {np.round(self.loss.weight_dice, decimals=5)}")
         # lrs are the same for all workers so we don't need to gather them in case of DDP training
         self.logger.log('lrs', self.optimizer.param_groups[0]['lr'], self.current_epoch)
 
